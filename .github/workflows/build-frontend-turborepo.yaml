@@ -116,6 +116,9 @@ jobs:
     strategy:
       matrix:
         app: ${{ fromJSON(needs.AppNames.outputs.apps) }}
+    defaults:
+      run:
+        working-directory: ./frontend/
     steps:
       - name: Checkout repo
         uses: actions/checkout@v6
