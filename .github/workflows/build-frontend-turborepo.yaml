@@ -15,54 +15,61 @@ permissions:
   id-token: write
   contents: read
 
-jobs: 
-  check-for-changes:
-    name: Checking Changes
-    if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./frontend/
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Decide whether to run
-        id: pathcheck
+jobs:
+  check-conditions:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      run_build: ${{ steps.logic.outputs.run_build }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Evaluate Logic
+        id: logic
         shell: bash
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "Triggered by tag → always run"
-            echo "run=true" >> $GITHUB_OUTPUT
-          else
-            BASE="${GITHUB_BASE_REF}"
-            echo "Base branch: $BASE"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "Condition Met: Tag pushed"
+            echo "run_build=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          BASE="${{ github.base_ref }}"
+          git fetch origin "$BASE" --quiet
+          CHANGED=$(git diff --name-only origin/"$BASE"...HEAD | grep -v '\.md$' || true)
 
-            CHANGED=$(git diff --name-only origin/$BASE...HEAD | grep -v '\.md$' || true)
-            echo "Changed files (non-md):"
-            echo "$CHANGED"
-
-            if [[ "$BASE" == "dev" ]]; then
-              DEV_CHANGED=$(echo "$CHANGED" | grep 'frontend/' || true)
-              [[ -n "$DEV_CHANGED" ]] && echo "run=true" >> $GITHUB_OUTPUT || echo "run=false" >> $GITHUB_OUTPUT
-            elif [[ "$BASE" == hotfix-* ]]; then
-              [[ -n "$CHANGED" ]] && echo "run=true" >> $GITHUB_OUTPUT || echo "run=false" >> $GITHUB_OUTPUT
-            else
-              echo "run=false" >> $GITHUB_OUTPUT
-            fi
+          if [[ -z "$CHANGED" ]]; then
+            echo "No relevant changes found."
+            echo "run_build=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
-      - name: Stop if conditions not met
-        if: steps.pathcheck.outputs.run != 'true'
-        run: |
-          echo "Conditions not met. Skipping workflow."
-          exit 0
+          if [[ "$BASE" == "dev" ]]; then
+            if echo "$CHANGED" | grep -q "backend/"; then
+              echo "Condition Met: Dev merge with backend changes"
+              echo "run_build=true" >> $GITHUB_OUTPUT
+            else
+              echo "Condition Not Met: Dev merge but no backend changes"
+              echo "run_build=false" >> $GITHUB_OUTPUT
+            fi
+
+          elif [[ "$BASE" == hotfix-* ]]; then
+            echo "Condition Met: Hotfix merge with changes"
+            echo "run_build=true" >> $GITHUB_OUTPUT
+          
+          else
+            echo "run_build=false" >> $GITHUB_OUTPUT
+          fi
+
+
   AppNames:
+    needs: check-conditions 
     if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-    needs: check-for-changes
+      ((github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) && needs.check-conditions.outputs.run_build == 'true'
     runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.get-frontend-apps.outputs.apps }}
