@@ -97,14 +97,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
           role-session-name: Federal
 
-      - name: Assume worker role (chained)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_WORKER_ROLE_ARN }}
-          role-chaining: true
-          role-session-name: Secondary
-
       - name: Zip built Apps
         run: |
           cd frontend/apps/${{ matrix.app }}
