@@ -5,9 +5,6 @@ on:
     branches:
       - dev
       - 'hotfix-*'
-    paths:
-      - '/infraops-utils/msinfraops-dev-apps/code/**'
-      - '!/infraops-utils/msinfraops-dev-apps/code/**.md'
     types:
       - closed
   push:
@@ -19,15 +16,9 @@ permissions:
   contents: read
 
 jobs: 
-  getting-app-names:
-    name: Getting App Names
-    if:
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+  AppNames:
+    if: github.event.pull_request.merged == true || github.event_name == 'release'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./infraops-utils/msinfraops-dev-apps/code/
     outputs:
       apps: ${{ steps.get-frontend-apps.outputs.apps }}
     steps:
@@ -37,17 +28,6 @@ jobs:
         with:
           ref: dev
 
-      - name: Set up node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Caching Packages
-        run: |
-          npm install
-          
       - name: Checkout tag
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/checkout@v6
@@ -71,8 +51,9 @@ jobs:
       - name: Get Frontend App Names
         id: get-frontend-apps
         run: |
+          cd frontend/apps
           APP_ARRAY=()
-          for f in ./apps/*; do
+          for f in *; do
             [ -e "$f" ] || continue
             APP_ARRAY+=("\"$f\"")
           done
@@ -81,16 +62,12 @@ jobs:
           echo "apps=$JSON" >> $GITHUB_OUTPUT
           echo $JSON
 
-  upload-App-s3:
-    name: Uploading to S3
-    needs: getting-app-names
+  AppToS3:
+    needs: AppNames
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./infraops-utils/msinfraops-dev-apps/code/
     strategy:
       matrix:
-        app: ${{ fromJSON(needs.getting-app-names.outputs.apps) }}
+        app: ${{ fromJSON(needs.AppNames.outputs.apps) }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v6
@@ -100,15 +77,17 @@ jobs:
         with:
           version: 10
 
-      - name: Installing dependencies
+      - name: Install deps
         run: |
+          cd frontend
           pnpm install
 
-      - name: Building frontend
+      - name: Build frontend
         run: |
+          cd frontend
           pnpm turbo build --filter=${{ matrix.app }}
 
-      - name: Assuming federated role
+      - name: Assume federated role
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.AWS_REGION }}
@@ -117,22 +96,22 @@ jobs:
 
       - name: Zip built Apps
         run: |
-          cd ./apps/${{ matrix.app }}
+          cd frontend/apps/${{ matrix.app }}
           zip -r ${{ matrix.app }}.zip build/
 
-      - name: Uploading Apps (dev)
+      - name: Deploy Apps (dev)
         if: github.ref == 'refs/heads/dev'
         run: |
           cd frontend/apps/${{ matrix.app }}
           aws s3 cp "${{ matrix.app }}.zip" s3://${{ secrets.BUCKET_NAME }}/frontend/${{ vars.FOLDER_NAME}}/${{ matrix.app }}.zip
 
-      - name: Uploading Apps (tags)
+      - name: Deploy Apps (tags)
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           cd frontend/apps/${{ matrix.app }}
           aws s3 cp "${{ matrix.app }}.zip" s3://${{ secrets.BUCKET_NAME }}/frontend/${GITHUB_REF#refs/tags/}/${{ matrix.app }}.zip
 
-      - name: Uploading Apps (hotfix)
+      - name: Deploy Apps (hotfix)
         if: startsWith(github.ref, 'refs/heads/hotfix-')
         run: |
           cd frontend/apps/${{ matrix.app }}
