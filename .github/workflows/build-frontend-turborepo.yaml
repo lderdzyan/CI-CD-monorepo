@@ -5,9 +5,6 @@ on:
     branches:
       - dev
       - 'hotfix-*'
-    paths:
-      - 'frontend/**'
-      - '!frontend/**/*.md'
     types:
       - closed
   push:
@@ -19,11 +16,59 @@ permissions:
   contents: read
 
 jobs: 
+  check-for-changes:
+    name: Checking Changes
+    if: |
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide whether to run
+        id: pathcheck
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "Triggered by tag → always run"
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            BASE="${GITHUB_BASE_REF}"
+            echo "Base branch: $BASE"
+
+            CHANGED=$(git diff --name-only origin/$BASE...HEAD | grep -v '\.md$' || true)
+            echo "Changed files (non-md):"
+            echo "$CHANGED"
+
+            if [[ "$BASE" == "dev" ]]; then
+              DEV_CHANGED=$(echo "$CHANGED" | grep 'frontend/' || true)
+              [[ -n "$DEV_CHANGED" ]] && echo "run=true" >> $GITHUB_OUTPUT || echo "run=false" >> $GITHUB_OUTPUT
+            elif [[ "$BASE" == hotfix-* ]]; then
+              [[ -n "$CHANGED" ]] && echo "run=true" >> $GITHUB_OUTPUT || echo "run=false" >> $GITHUB_OUTPUT
+            else
+              echo "run=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Stop if conditions not met
+        if: steps.pathcheck.outputs.run != 'true'
+        run: |
+          echo "Conditions not met. Skipping workflow."
+          exit 0
   AppNames:
-    if: github.event.pull_request.merged == true || github.event_name == 'release'
+    if: |
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+    needs: check-for-changes
     runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.get-frontend-apps.outputs.apps }}
+    defaults:
+      run:
+        working-directory: ./frontend/
     steps:
       - name: Checkout dev
         if: github.ref == 'refs/heads/dev'
@@ -54,7 +99,7 @@ jobs:
       - name: Get Frontend App Names
         id: get-frontend-apps
         run: |
-          cd frontend/apps
+          cd ./apps
           APP_ARRAY=()
           for f in *; do
             [ -e "$f" ] || continue
@@ -82,12 +127,10 @@ jobs:
 
       - name: Install deps
         run: |
-          cd frontend
           pnpm install
 
       - name: Build frontend
         run: |
-          cd frontend
           pnpm turbo build --filter=${{ matrix.app }}
 
       - name: Assume federated role
@@ -99,23 +142,21 @@ jobs:
 
       - name: Zip built Apps
         run: |
-          cd frontend/apps/${{ matrix.app }}
-          zip -r ${{ matrix.app }}.zip build/
+          cd ./apps/${{ matrix.app }}/build
+          cp ../bootstrapjs.sh .
+          zip -r ${{ matrix.app }}.zip .
 
       - name: Deploy Apps (dev)
         if: github.ref == 'refs/heads/dev'
         run: |
-          cd frontend/apps/${{ matrix.app }}
-          aws s3 cp "${{ matrix.app }}.zip" s3://${{ secrets.BUCKET_NAME }}/frontend/${{ vars.FOLDER_NAME}}/${{ matrix.app }}.zip
+          aws s3 cp "./apps/${{ matrix.app }}/${{ matrix.app }}.zip" s3://${{ secrets.BUCKET_NAME }}/frontend/dev/${{ matrix.app }}.zip
 
       - name: Deploy Apps (tags)
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          cd frontend/apps/${{ matrix.app }}
-          aws s3 cp "${{ matrix.app }}.zip" s3://${{ secrets.BUCKET_NAME }}/frontend/${GITHUB_REF#refs/tags/}/${{ matrix.app }}.zip
+          aws s3 cp "./apps/${{ matrix.app }}/${{ matrix.app }}.zip" s3://${{ secrets.BUCKET_NAME }}/frontend/${GITHUB_REF#refs/tags/}/${{ matrix.app }}.zip
 
       - name: Deploy Apps (hotfix)
         if: startsWith(github.ref, 'refs/heads/hotfix-')
         run: |
-          cd frontend/apps/${{ matrix.app }}
-          aws s3 cp "${{ matrix.app }}.zip" s3://${{ secrets.BUCKET_NAME }}/frontend/${GITHUB_REF#refs/heads/}/${{ matrix.app }}.zip 
+          aws s3 cp "./apps/${{ matrix.app }}/${{ matrix.app }}.zip" s3://${{ secrets.BUCKET_NAME }}/frontend/${GITHUB_REF#refs/heads/}/${{ matrix.app }}.zip 

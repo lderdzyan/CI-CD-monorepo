@@ -1,0 +1,159 @@
+name: "Frontend - Deploy Micro-Applications"
+
+on:
+  workflow_run:
+    workflows: ["build-frontend-turborepo"]
+    types: [completed]
+
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        description: "Choose the version"
+        required: true
+        default: "dev"
+      instance:
+        type: choice
+        description: "Choose the instance"
+        required: true
+        default: "dev"
+        options:
+          - dev
+          - ua
+          - preprod
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  getting-applications-names:
+    name: Resolve inputs and list Micro-Applications
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'  }}
+    environment: dev
+    outputs:
+      app-names: ${{ steps.app-names.outputs.names }}
+      instance: ${{ steps.resolve.outputs.instance }}
+      version: ${{ steps.resolve.outputs.version }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve version and instance inputs
+        id: resolve
+        shell: bash
+        run: |
+          EVENT="${{ github.event.workflow_run.event }}"
+          BRANCH="${{ github.ref_name }}"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+            echo "instance=${{ inputs.instance }}" >> $GITHUB_OUTPUT
+          elif [[ "$EVENT" == "pull_request" && "$BRANCH" == "dev" ]]; then
+            echo "version=dev" >> $GITHUB_OUTPUT
+            echo "instance=dev" >> $GITHUB_OUTPUT
+          else
+            echo "SHA=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_ENV
+            git fetch --tags
+            TAG=$(git tag --points-at $SHA)
+            echo "version=$TAG" >> $GITHUB_OUTPUT
+            echo "instance=ua" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Assume federated role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
+          role-session-name: Federal
+
+      - name: Check version existence
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          if aws s3 ls "s3://${{ secrets.BUCKET_NAME }}/frontend/${{ steps.resolve.outputs.version }}/" > /dev/null 2>&1; then
+            echo "::notice::Version exists."
+          else
+            echo "::error::Wrong version number: ${{ steps.resolve.outputs.version }}"
+            exit 1
+          fi
+
+      - name: List applications names from S3
+        id: app-names
+        run: |
+          S3_ARRAY=()
+          while read f; do
+            NAME=$(basename "$f")
+            NAME="${NAME%.*}"
+            S3_ARRAY+=("\"$NAME\"")
+          done < <(aws s3 ls s3://${{ secrets.BUCKET_NAME }}/frontend/${{ steps.resolve.outputs.version }}/ | awk '{print $4}' | awk 'NF {print}')
+          IFS=,
+          JSON="[${S3_ARRAY[*]}]"
+          echo "names=$JSON" >> $GITHUB_OUTPUT
+          echo "names=$JSON"
+
+  download-app-from-s3:
+    name: Download application archives from S3
+    needs: getting-applications-names
+    runs-on: ubuntu-latest
+    environment: dev
+    strategy:
+      matrix:
+        app: ${{ fromJSON(needs.getting-applications-names.outputs.app-names) }}
+    steps:
+      - name: Assume federated role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
+          role-session-name: Federal
+
+      - name: Download application archive from S3
+        run: aws s3 cp s3://${{ secrets.BUCKET_NAME }}/frontend/${{ needs.getting-applications-names.outputs.version }}/${{ matrix.app }}.zip ./${{ matrix.app }}.zip
+
+      - name: Upload application archive as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}
+          path: ./${{ matrix.app }}.zip
+
+  deploy-application:
+    name: Deploy application
+    needs: [getting-applications-names, download-app-from-s3]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.getting-applications-names.outputs.instance }}
+    strategy:
+      matrix:
+        app: ${{ fromJSON(needs.getting-applications-names.outputs.app-names) }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: "GHADeployApp"
+
+      - name: Download application archive from artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ matrix.app }}
+          path: ./${{ matrix.app }}.zip
+
+      - name: Extract Artifact
+        run: |
+          unzip ${{ matrix.app }}.zip .
+          ls
+     
+      - name: Creating bootstrapjs.sh
+        run: | 
+          ./bootstrapjs.sh >> bootstrap.js
+          rm bootstrapjs.sh
+
+      - name: Deploy Application to S3
+        run : |
+           aws cp . s3://${{ secrets.REAL_BUCKET}}/
+
+
+          
