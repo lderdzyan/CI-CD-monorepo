@@ -1,0 +1,40 @@
+name: Npm Audit Workflow
+
+on: 
+  pull_request:
+    types:
+      - ready_for_review
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs: 
+  vulnerabilities-scan:
+    name: Vulnerabilities Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+        # working-directory: ./msinfraops-dev-apps/code
+    steps:
+        - uses: actions/checkout@v4
+
+        - name: Set up node
+          uses: actions/setup-node@v4
+          with:
+            node-version: 20
+            cache: npm
+            cache-dependency-path: backend/package-lock.json
+
+        - name: Downloading NPM dependencies and checking for depracated packages
+          run: |
+            WARNING_LINE=$(npm install | grep "vulnerabilities")
+            npm audit --json > audit_results.txt || true 
+            HIGH_SEVERITY=$(jq '.metadata.vulnerabilities | .high' audit_results.txt)
+            if [ "$HIGH_SEVERITY" -gt 0 ]; then
+            echo "::warning ::$WARNING_LINE."
+            npm audit || true
+            gh pr edit ${{github.event.number}} --add-label "vulnerabilities"
+            fi
+          shell: bash

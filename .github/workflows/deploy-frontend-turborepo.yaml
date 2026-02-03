@@ -2,9 +2,8 @@ name: "Frontend - Deploy Micro-Applications"
 
 on:
   workflow_run:
-    workflows: ["build-frontend-turborepo"]
+    workflows: ["Frontend - Build and Archive Micro-Applications"]
     types: [completed]
-
   workflow_dispatch:
     inputs:
       version:
@@ -62,13 +61,14 @@ jobs:
             echo "instance=ua" >> $GITHUB_OUTPUT
           fi
 
-      - name: Assume federated role
+      - name: Assuming federated role
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
           role-session-name: Federal
 
+          
       - name: Check version existence
         if: github.event_name == 'workflow_dispatch'
         shell: bash
@@ -103,12 +103,13 @@ jobs:
       matrix:
         app: ${{ fromJSON(needs.getting-applications-names.outputs.app-names) }}
     steps:
-      - name: Assume federated role
+      - name: Assuming federated role
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
           role-session-name: Federal
+
 
       - name: Download application archive from S3
         run: aws s3 cp s3://${{ secrets.BUCKET_NAME }}/frontend/${{ needs.getting-applications-names.outputs.version }}/${{ matrix.app }}.zip ./${{ matrix.app }}.zip
@@ -144,7 +145,6 @@ jobs:
       - name: Extract Artifact
         run: |
           unzip ${{ matrix.app }}.zip .
-          ls
      
       - name: Creating bootstrapjs.sh
         run: | 
@@ -155,5 +155,18 @@ jobs:
         run : |
            aws cp . s3://${{ secrets.REAL_BUCKET}}/
 
+  cloudfront-individual:
+    name: CloudFront Individual 
+    environment: ${{ needs.getting-applications-names.outputs.instance }}
+    runs-on: ubuntu-latest
+    steps: 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: "GHADeployApp"
 
-          
+      - name: Creating Cloudfront individual
+        run: |
+            aws cloudfront create-invalidation --distribution-id ${{secrets.DISTRIBUTIONID}} --paths "/*" 
