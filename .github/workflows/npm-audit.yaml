@@ -27,13 +27,31 @@ jobs:
             cache: npm
             cache-dependency-path: backend/package-lock.json
 
-        - name: Downloading NPM dependencies and checking for depracated packages
+        - name: Downloading NPM dependencies and auditing
           run: |
-            WARNING_LINE=$(npm install | grep "vulnerabilities")
-            npm audit --json > audit_results.txt || true 
-            HIGH_SEVERITY=$(jq '.metadata.vulnerabilities | .high' audit_results.txt)
-            if [ "$HIGH_SEVERITY" -gt 0 ]; then
-            echo "::warning ::$WARNING_LINE."
+            echo "Installing dependencies..."
+            WARNING_LINE=$(npm install | grep "vulnerabilities" || true)
+
+            echo "Running full npm audit and saving results..."
+            npm audit --json > audit_results.json || true  # continue even if vulnerabilities exist
+
+            echo "Full npm audit output:"
+            cat audit_results.json
+
+            HIGH_SEVERITY=$(jq '.metadata.vulnerabilities.high' audit_results.json)
+            CRITICAL_SEVERITY=$(jq '.metadata.vulnerabilities.critical' audit_results.json)
+
+            echo "High vulnerabilities: $HIGH_SEVERITY"
+            echo "Critical vulnerabilities: $CRITICAL_SEVERITY"
+
+            if [ "$HIGH_SEVERITY" -gt 0 ] || [ "$CRITICAL_SEVERITY" -gt 0 ]; then
+            echo "::warning ::$WARNING_LINE"
+            echo "Running npm audit for full console output..."
             npm audit || true
+            fi
+
+            if [ "$CRITICAL_SEVERITY" -gt 0 ]; then
+            echo "❌ Critical vulnerabilities detected! Failing workflow."
+            exit 1
             fi
           shell: bash
