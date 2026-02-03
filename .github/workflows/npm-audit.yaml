@@ -35,6 +35,5 @@ jobs:
             if [ "$HIGH_SEVERITY" -gt 0 ]; then
             echo "::warning ::$WARNING_LINE."
             npm audit || true
-            gh pr edit ${{github.event.number}} --add-label "vulnerabilities"
             fi
           shell: bash

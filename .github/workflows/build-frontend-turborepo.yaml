@@ -51,7 +51,7 @@ jobs:
           fi
 
           if [[ "$BASE" == "dev" ]]; then
-            if echo "$CHANGED" | grep -q "msinfraops-dev-apps/code/"; then
+            if echo "$CHANGED" | grep -q "backend/"; then
               echo "Condition Met: Dev merge with backend changes"
               echo "run_build=true" >> $GITHUB_OUTPUT
             else
@@ -73,7 +73,7 @@ jobs:
     environment: dev
     defaults:
       run:
-        working-directory: ./msinfraops-dev-apps/code
+        working-directory: ./backend
     if: >-
       ((github.event_name == 'pull_request' && github.event.pull_request.merged == true) || 
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) && 
@@ -117,7 +117,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          cache-dependency-path: msinfraops-dev-apps/code/pnpm-lock.yaml
+          cache-dependency-path: ./backend/
       - run: pnpm install --frozen-lockfile
       
       - name: Get Frontend App Names
