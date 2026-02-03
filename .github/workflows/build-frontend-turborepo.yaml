@@ -1,4 +1,4 @@
-name: build-frontend-turborepo
+name: "Frontend - Build and Archive Micro-Applications"
 
 on:
   pull_request:
@@ -11,13 +11,17 @@ on:
     tags:
       - "v*"
 
+env:
+  NODE_VERSION: 20
+  PNPM_VERSION: 10
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 
 jobs:
   check-conditions:
+    name: Check Conditions
     if: github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
@@ -47,7 +51,7 @@ jobs:
           fi
 
           if [[ "$BASE" == "dev" ]]; then
-            if echo "$CHANGED" | grep -q "frontend/"; then
+            if echo "$CHANGED" | grep -q "msinfraops-dev-apps/code/"; then
               echo "Condition Met: Dev merge with backend changes"
               echo "run_build=true" >> $GITHUB_OUTPUT
             else
@@ -64,17 +68,19 @@ jobs:
           fi
 
 
-  AppNames:
-    needs: check-conditions 
-    if: |
-      ((github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) && needs.check-conditions.outputs.run_build == 'true'
+  getting-applications-names:
+    name: Getting applications names
+    environment: dev
+    defaults:
+      run:
+        working-directory: ./msinfraops-dev-apps/code
+    if: >-
+      ((github.event_name == 'pull_request' && github.event.pull_request.merged == true) || 
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))) && 
+      needs.check-conditions.outputs.run_build == 'true'
     runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.get-frontend-apps.outputs.apps }}
-    defaults:
-      run:
-        working-directory: ./frontend/
     steps:
       - name: Checkout dev
         if: github.ref == 'refs/heads/dev'
@@ -101,7 +107,19 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           generate_release_notes: true
+      - name: Setup Pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: msinfraops-dev-apps/code/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      
       - name: Get Frontend App Names
         id: get-frontend-apps
         run: |
@@ -116,12 +134,13 @@ jobs:
           echo "apps=$JSON" >> $GITHUB_OUTPUT
           echo $JSON
 
-  AppToS3:
-    needs: AppNames
+  upload-app-s3:
+    name: Build application & upload to S3
+    needs: getting-applications-names
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: ${{ fromJSON(needs.AppNames.outputs.apps) }}
+        app: ${{ fromJSON(needs.getting-applications-names.outputs.apps) }}
     defaults:
       run:
         working-directory: ./frontend/
@@ -142,12 +161,12 @@ jobs:
         run: |
           pnpm turbo build --filter=${{ matrix.app }}
 
-      - name: Assume federated role
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
-          role-session-name: Federal
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: "GHADownloadArchive"
 
       - name: Zip built Apps
         run: |
