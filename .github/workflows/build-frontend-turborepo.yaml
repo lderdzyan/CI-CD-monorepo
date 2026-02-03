@@ -161,12 +161,12 @@ jobs:
         run: |
           pnpm turbo build --filter=${{ matrix.app }}
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+      - name: Assuming federated role
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: "GHADownloadArchive"
+          role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
+          role-session-name: Federal
 
       - name: Zip built Apps
         run: |

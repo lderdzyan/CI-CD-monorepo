@@ -61,18 +61,19 @@ jobs:
             echo "instance=ua" >> $GITHUB_OUTPUT
           fi
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+      - name: Assuming federated role
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: "GHADownloadArchive"
+          role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
+          role-session-name: Federal
+
           
       - name: Check version existence
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
-          if aws s3 ls "s3://${{ vars.S3_BUCKET_ZIP }}/frontend/${{ steps.resolve.outputs.version }}/" > /dev/null 2>&1; then
+          if aws s3 ls "s3://${{ secrets.BUCKET_NAME }}/frontend/${{ steps.resolve.outputs.version }}/" > /dev/null 2>&1; then
             echo "::notice::Version exists."
           else
             echo "::error::Wrong version number: ${{ steps.resolve.outputs.version }}"
@@ -87,7 +88,7 @@ jobs:
             NAME=$(basename "$f")
             NAME="${NAME%.*}"
             S3_ARRAY+=("\"$NAME\"")
-          done < <(aws s3 ls s3://${{ vars.S3_BUCKET_ZIP }}/frontend/${{ steps.resolve.outputs.version }}/ | awk '{print $4}' | awk 'NF {print}')
+          done < <(aws s3 ls s3://${{ secrets.BUCKET_NAME }}/frontend/${{ steps.resolve.outputs.version }}/ | awk '{print $4}' | awk 'NF {print}')
           IFS=,
           JSON="[${S3_ARRAY[*]}]"
           echo "names=$JSON" >> $GITHUB_OUTPUT
@@ -102,15 +103,16 @@ jobs:
       matrix:
         app: ${{ fromJSON(needs.getting-applications-names.outputs.app-names) }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+      - name: Assuming federated role
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: "GHADownloadArchive"
+          role-to-assume: ${{ secrets.AWS_FED_ROLE_ARN }}
+          role-session-name: Federal
+
 
       - name: Download application archive from S3
-        run: aws s3 cp s3://${{ vars.S3_BUCKET_ZIP }}/frontend/${{ needs.getting-applications-names.outputs.version }}/${{ matrix.app }}.zip ./${{ matrix.app }}.zip
+        run: aws s3 cp s3://${{ secrets.BUCKET_NAME }}/frontend/${{ needs.getting-applications-names.outputs.version }}/${{ matrix.app }}.zip ./${{ matrix.app }}.zip
 
       - name: Upload application archive as artifact
         uses: actions/upload-artifact@v4

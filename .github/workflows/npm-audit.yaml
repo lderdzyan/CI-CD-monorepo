@@ -37,5 +37,3 @@ jobs:
             gh pr edit ${{github.event.number}} --add-label "vulnerabilities"
             fi
           shell: bash
-
-
