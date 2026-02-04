@@ -22,9 +22,7 @@ jobs:
         with:
           github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
           script: |
-            // Use the input number if manual, otherwise default to 1
             const PROJECT_NUMBER = parseInt(context.payload.inputs?.project_number || '1', 10); 
-            
             const STATUS_FIELD = "Status";
             const ESTIMATE_FIELD = "Estimate";
             const FROM_STATUS = "Need Estimation";
@@ -53,9 +51,9 @@ jobs:
 
             const statusField = project.fields.nodes.find(f => f.name === STATUS_FIELD);
             const todoOption = statusField?.options?.find(o => o.name === TO_STATUS);
-            if (!statusField || !todoOption) return console.log("Fields not configured correctly.");
+            if (!statusField || !todoOption) return console.log("Fields or 'To Do' option not found.");
 
-            // 2. Determine Items
+            // 2. Determine Items (Scan board or specific item)
             let itemsToProcess = [];
             if (context.payload.projects_v2_item) {
               const itemId = context.payload.projects_v2_item.node_id;
@@ -68,6 +66,7 @@ jobs:
                         nodes {
                           ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2FieldCommon { name } } name }
                           ... on ProjectV2ItemFieldNumberValue { field { ... on ProjectV2FieldCommon { name } } number }
+                          ... on ProjectV2ItemFieldTextValue { field { ... on ProjectV2FieldCommon { name } } text }
                         }
                       }
                     }
@@ -87,6 +86,7 @@ jobs:
                             nodes {
                               ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2FieldCommon { name } } name }
                               ... on ProjectV2ItemFieldNumberValue { field { ... on ProjectV2FieldCommon { name } } number }
+                              ... on ProjectV2ItemFieldTextValue { field { ... on ProjectV2FieldCommon { name } } text }
                             }
                           }
                         }
@@ -98,17 +98,26 @@ jobs:
               itemsToProcess = boardRes.user.projectV2.items.nodes;
             }
 
-            // 3. Process
+            // 3. Process Logic
             for (const item of itemsToProcess) {
               let currentStatus = null;
               let currentEstimate = null;
 
               for (const val of item.fieldValues.nodes) {
-                if (val.field?.name === STATUS_FIELD) currentStatus = val.name;
-                if (val.field?.name === ESTIMATE_FIELD) currentEstimate = val.number;
+                const fieldName = val.field?.name;
+                if (fieldName === STATUS_FIELD) currentStatus = val.name;
+                
+                // Capture estimate regardless of type (Text, Number, or Single Select)
+                if (fieldName === ESTIMATE_FIELD) {
+                    currentEstimate = val.number ?? val.text ?? val.name;
+                }
               }
 
-              if (currentStatus === FROM_STATUS && typeof currentEstimate === 'number') {
+              console.log(`Checking Item ${item.id}: Status='${currentStatus}', Estimate='${currentEstimate}'`);
+
+              // LOGIC: If status is FROM_STATUS AND currentEstimate is not null/empty
+              if (currentStatus === FROM_STATUS && currentEstimate !== null && currentEstimate !== "") {
+                console.log("Match! Updating to To Do...");
                 await github.graphql(`
                   mutation ($proj: ID!, $item: ID!, $field: ID!, $option: String!) {
                     updateProjectV2ItemFieldValue(input: {
@@ -117,6 +126,5 @@ jobs:
                     }) { projectV2Item { id } }
                   }
                 `, { proj: project.id, item: item.id, field: statusField.id, option: todoOption.id });
-                console.log(`Updated Item ${item.id}`);
               }
             }
