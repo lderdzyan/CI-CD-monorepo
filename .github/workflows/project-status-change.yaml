@@ -31,10 +31,10 @@ jobs:
 
             const owner = context.repo.owner;
 
-            // 1. Fetch Project and Fields
+            // 1. Fetch Project and Fields using the 'user' type
             const projectRes = await github.graphql(`
               query ($owner: String!, $number: Int!) {
-                repositoryOwner(login: $owner) {
+                user(login: $owner) {
                   projectV2(number: $number) {
                     id
                     fields(first: 50) {
@@ -55,7 +55,13 @@ jobs:
               }
             `, { owner, number: PROJECT_NUMBER });
 
-            const project = projectRes.repositoryOwner.projectV2;
+            const project = projectRes.user.projectV2;
+
+            if (!project) {
+              console.log(`Could not find Project #${PROJECT_NUMBER} for user ${owner}`);
+              return;
+            }
+
             const statusField = project.fields.nodes.find(f => f.name === STATUS_FIELD);
             const estimateField = project.fields.nodes.find(f => f.name === ESTIMATE_FIELD);
             const todoOption = statusField?.options?.find(o => o.name === TO_STATUS);
@@ -65,7 +71,7 @@ jobs:
               return;
             }
 
-            // 2. Get the specific item that was edited
+            // 2. Get the specific item from the webhook payload
             const itemId = context.payload.projects_v2_item.node_id;
 
             const itemRes = await github.graphql(`
@@ -97,9 +103,10 @@ jobs:
               if (val.field?.name === ESTIMATE_FIELD) currentEstimate = val.number;
             }
 
-            console.log(`Current Status: ${currentStatus}, Estimate: ${currentEstimate}`);
+            console.log(`Item ID: ${itemId}`);
+            console.log(`Current Status: ${currentStatus}, Current Estimate: ${currentEstimate}`);
 
-            // 3. Logic: If status is 'Need Estimation' and Estimate is a number, move to 'To Do'
+            // 3. Logic enforcement
             if (currentStatus === FROM_STATUS && typeof currentEstimate === 'number') {
               await github.graphql(`
                 mutation ($proj: ID!, $item: ID!, $field: ID!, $option: String!) {
@@ -118,7 +125,7 @@ jobs:
                 field: statusField.id,
                 option: todoOption.id
               });
-              console.log("Successfully moved to To Do!");
+              console.log("Success: Status updated to 'To Do'");
             } else {
-              console.log("Conditions not met for move.");
+              console.log("Conditions not met (Status is not 'Need Estimation' or Estimate is not a number).");
             }
