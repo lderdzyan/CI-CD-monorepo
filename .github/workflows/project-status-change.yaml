@@ -8,7 +8,7 @@ on:
         required: true
         default: '1'
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *" 
 
 permissions:
   repository-projects: write
@@ -21,7 +21,11 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const PROJECT_NUMBER = parseInt(context.inputs.project_number || '1', 10);
+            const PROJECT_NUMBER = parseInt(
+              context.payload.inputs?.project_number || '1',
+              10
+            );
+
             const STATUS_FIELD = "Status";
             const ESTIMATE_FIELD = "Estimate";
             const FROM_STATUS = "Need Estimation";
@@ -51,18 +55,6 @@ jobs:
                               field { name }
                               number
                             }
-                            ... on ProjectV2ItemFieldLabelValue {
-                              field { name }
-                              labels { id name }
-                            }
-                            ... on ProjectV2ItemFieldIterationValue {
-                              field { name }
-                              id
-                            }
-                            ... on ProjectV2ItemFieldDateValue {
-                              field { name }
-                              date
-                            }
                           }
                         }
                       }
@@ -82,10 +74,18 @@ jobs:
             `, { owner });
 
             const project = projectRes.organization.projectV2;
+            if (!project) {
+              console.log("Project not found");
+              return;
+            }
+
             const statusField = project.fields.nodes.find(f => f.name === STATUS_FIELD);
             const todoOption = statusField?.options.find(o => o.name === TO_STATUS);
 
-            if (!statusField || !todoOption) return;
+            if (!statusField || !todoOption) {
+              console.log("Status field or To Do option not found");
+              return;
+            }
 
             for (const item of project.items.nodes) {
               let statusValue = null;
