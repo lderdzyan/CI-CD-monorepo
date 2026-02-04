@@ -20,11 +20,10 @@ jobs:
     steps:
       - uses: actions/github-script@v7
         with:
+          # IMPORTANT: Use the PAT secret here
+          github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
           script: |
-            const PROJECT_NUMBER = parseInt(
-            context.payload.inputs?.project_number || '1',
-            10
-            );
+            const PROJECT_NUMBER = 1; 
             const STATUS_FIELD = "Status";
             const ESTIMATE_FIELD = "Estimate";
             const FROM_STATUS = "Need Estimation";
@@ -32,33 +31,13 @@ jobs:
 
             const owner = context.repo.owner;
 
+            // 1. Fetch Project and Fields
             const projectRes = await github.graphql(`
               query ($owner: String!, $number: Int!) {
-                user(login: $owner) {
+                repositoryOwner(login: $owner) {
                   projectV2(number: $number) {
                     id
-                    items(first: 50) {
-                      nodes {
-                        id
-                        fieldValues(first: 20) {
-                          nodes {
-                            ... on ProjectV2ItemFieldSingleSelectValue {
-                              field { ... on ProjectV2FieldCommon { name } }
-                              name
-                            }
-                            ... on ProjectV2ItemFieldNumberValue {
-                              field { ... on ProjectV2FieldCommon { name } }
-                              number
-                            }
-                            ... on ProjectV2ItemFieldTextValue {
-                              field { ... on ProjectV2FieldCommon { name } }
-                              text
-                            }
-                          }
-                        }
-                      }
-                    }
-                    fields(first: 20) {
+                    fields(first: 50) {
                       nodes {
                         ... on ProjectV2SingleSelectField {
                           id
@@ -76,53 +55,70 @@ jobs:
               }
             `, { owner, number: PROJECT_NUMBER });
 
-            const project = projectRes.user.projectV2;
-            if (!project) {
-              console.log("Project not found");
-              return;
-            }
-
+            const project = projectRes.repositoryOwner.projectV2;
             const statusField = project.fields.nodes.find(f => f.name === STATUS_FIELD);
+            const estimateField = project.fields.nodes.find(f => f.name === ESTIMATE_FIELD);
             const todoOption = statusField?.options?.find(o => o.name === TO_STATUS);
 
             if (!statusField || !todoOption) {
-              console.log("Status field or To Do option not found");
+              console.log("Could not find Status field or 'To Do' option.");
               return;
             }
 
-            for (const item of project.items.nodes) {
-              let statusValue = null;
-              let estimateValue = null;
+            // 2. Get the specific item that was edited
+            const itemId = context.payload.projects_v2_item.node_id;
 
-              for (const v of item.fieldValues.nodes) {
-                const fieldName = v.field?.name;
-                if (fieldName === STATUS_FIELD) statusValue = v.name;
-                if (fieldName === ESTIMATE_FIELD) {
-                    // Handle both number fields and text-based estimate fields
-                    estimateValue = v.number !== undefined ? v.number : v.text;
-                }
-              }
-
-              if (statusValue === FROM_STATUS && estimateValue !== null && estimateValue !== "") {
-                await github.graphql(`
-                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-                    updateProjectV2ItemFieldValue(
-                      input: {
-                        projectId: $projectId
-                        itemId: $itemId
-                        fieldId: $fieldId
-                        value: { singleSelectOptionId: $optionId }
+            const itemRes = await github.graphql(`
+              query ($item: ID!) {
+                node(id: $item) {
+                  ... on ProjectV2Item {
+                    fieldValues(first: 20) {
+                      nodes {
+                        ... on ProjectV2ItemFieldSingleSelectValue {
+                          field { ... on ProjectV2FieldCommon { name } }
+                          name
+                        }
+                        ... on ProjectV2ItemFieldNumberValue {
+                          field { ... on ProjectV2FieldCommon { name } }
+                          number
+                        }
                       }
-                    ) {
-                      projectV2Item { id }
                     }
                   }
-                `, {
-                  projectId: project.id,
-                  itemId: item.id,
-                  fieldId: statusField.id,
-                  optionId: todoOption.id
-                });
-                console.log(`Item ${item.id}: Status updated to To Do`);
+                }
               }
+            `, { item: itemId });
+
+            let currentStatus = null;
+            let currentEstimate = null;
+
+            for (const val of itemRes.node.fieldValues.nodes) {
+              if (val.field?.name === STATUS_FIELD) currentStatus = val.name;
+              if (val.field?.name === ESTIMATE_FIELD) currentEstimate = val.number;
+            }
+
+            console.log(`Current Status: ${currentStatus}, Estimate: ${currentEstimate}`);
+
+            // 3. Logic: If status is 'Need Estimation' and Estimate is a number, move to 'To Do'
+            if (currentStatus === FROM_STATUS && typeof currentEstimate === 'number') {
+              await github.graphql(`
+                mutation ($proj: ID!, $item: ID!, $field: ID!, $option: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $proj,
+                    itemId: $item,
+                    fieldId: $field,
+                    value: { singleSelectOptionId: $option }
+                  }) {
+                    projectV2Item { id }
+                  }
+                }
+              `, {
+                proj: project.id,
+                item: itemId,
+                field: statusField.id,
+                option: todoOption.id
+              });
+              console.log("Successfully moved to To Do!");
+            } else {
+              console.log("Conditions not met for move.");
             }
