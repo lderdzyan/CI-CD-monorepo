@@ -58,26 +58,6 @@ jobs:
                           name
                           options { id name }
                         }
-                        ... on ProjectV2TextField {
-                          id
-                          name
-                        }
-                        ... on ProjectV2NumberField {
-                          id
-                          name
-                        }
-                        ... on ProjectV2IterationField {
-                          id
-                          name
-                        }
-                        ... on ProjectV2DateField {
-                          id
-                          name
-                        }
-                        ... on ProjectV2LabelField {
-                          id
-                          name
-                        }
                       }
                     }
                   }
