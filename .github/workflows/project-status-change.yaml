@@ -21,7 +21,7 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const PROJECT_NUMBER = 1; 
+            const PROJECT_NUMBER = parseInt(context.inputs.project_number || '1', 10);
             const STATUS_FIELD = "Status";
             const ESTIMATE_FIELD = "Estimate";
             const FROM_STATUS = "Need Estimation";
@@ -47,6 +47,22 @@ jobs:
                               field { name }
                               text
                             }
+                            ... on ProjectV2ItemFieldNumberValue {
+                              field { name }
+                              number
+                            }
+                            ... on ProjectV2ItemFieldLabelValue {
+                              field { name }
+                              labels { id name }
+                            }
+                            ... on ProjectV2ItemFieldIterationValue {
+                              field { name }
+                              id
+                            }
+                            ... on ProjectV2ItemFieldDateValue {
+                              field { name }
+                              date
+                            }
                           }
                         }
                       }
@@ -67,18 +83,20 @@ jobs:
 
             const project = projectRes.organization.projectV2;
             const statusField = project.fields.nodes.find(f => f.name === STATUS_FIELD);
-            const estimateField = project.fields.nodes.find(f => f.name === ESTIMATE_FIELD);
-            const todoOption = statusField.options.find(o => o.name === TO_STATUS);
+            const todoOption = statusField?.options.find(o => o.name === TO_STATUS);
 
-            if (!statusField || !estimateField || !todoOption) return;
+            if (!statusField || !todoOption) return;
 
             for (const item of project.items.nodes) {
               let statusValue = null;
               let estimateValue = null;
 
               for (const v of item.fieldValues.nodes) {
-                if (v.field?.name === STATUS_FIELD) statusValue = v.name;
-                if (v.field?.name === ESTIMATE_FIELD) estimateValue = v.text;
+                if (v.field?.name === STATUS_FIELD && v.name) statusValue = v.name;
+                if (v.field?.name === ESTIMATE_FIELD) {
+                  if (v.text) estimateValue = v.text;
+                  if (v.number !== undefined) estimateValue = v.number.toString();
+                }
               }
 
               if (statusValue === FROM_STATUS && estimateValue && estimateValue.trim() !== "") {
@@ -96,6 +114,6 @@ jobs:
                     }
                   }
                 `);
-                console.log(`Item ${item.id}: Status updated to To Do`);
+                console.log(\`Item ${item.id}: Status updated to To Do\`);
               }
             }
