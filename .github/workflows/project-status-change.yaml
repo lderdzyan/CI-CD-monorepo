@@ -1,10 +1,11 @@
 name: Project auto status from estimate
 
 on:
-  projects_v2_item:
+  issues:
     types:
       - edited
-      
+  
+
 permissions:
   repository-projects: write
   contents: read
@@ -16,8 +17,7 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            // -------- CONFIG --------
-            const PROJECT_NUMBER = 1; // Project 1 number
+            const PROJECT_NUMBER = 1; 
             const STATUS_FIELD = "Status";
             const ESTIMATE_FIELD = "Estimate";
             const FROM_STATUS = "Need Estimation";
@@ -25,7 +25,6 @@ jobs:
 
             const owner = context.repo.owner;g
 
-            // -------- Get project + fields --------
             const projectRes = await github.graphql(`
               query ($owner: String!) {
                 organization(login: $owner) {
@@ -57,7 +56,6 @@ jobs:
 
             if (!statusField || !estimateField || !todoOption) return;
 
-            // -------- Get edited project item --------
             const itemId = context.payload.projects_v2_item.node_id;
 
             const itemRes = await github.graphql(`
@@ -90,7 +88,6 @@ jobs:
               if (v.field?.name === ESTIMATE_FIELD) estimateValue = v.number;
             }
 
-            // -------- Rule enforcement --------
             if (
               statusValue === FROM_STATUS &&
               typeof estimateValue === "number"
