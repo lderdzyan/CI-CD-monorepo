@@ -1,4 +1,4 @@
-name: Npm Audit Workflow
+name: Check app npm packages for vulnerabilities
 
 on: 
   pull_request:
@@ -15,26 +15,21 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./backend
-        # working-directory: ./msinfraops-dev-apps/code
+          working-directory: ./backend
     steps:
-        - uses: actions/checkout@v4
+        - uses: actions/checkout@v6
 
         - name: Set up node
           uses: actions/setup-node@v4
           with:
             node-version: 20
             cache: npm
-            cache-dependency-path: backend/package-lock.json
+            cache-dependency-path: /backend/package-lock.json
 
         - name: Downloading NPM dependencies and auditing
           run: |
-            echo "Installing dependencies..."
             WARNING_LINE=$(npm install | grep "vulnerabilities" || true)
-
-            echo "Running full npm audit and saving results..."
-            npm audit --json > audit_results.json || true  # continue even if vulnerabilities exist
-
+            npm audit --json > audit_results.json || true  
             echo "Full npm audit output:"
             cat audit_results.json
 
@@ -46,12 +41,11 @@ jobs:
 
             if [ "$HIGH_SEVERITY" -gt 0 ] || [ "$CRITICAL_SEVERITY" -gt 0 ]; then
             echo "::warning ::$WARNING_LINE"
-            echo "Running npm audit for full console output..."
             npm audit || true
             fi
 
             if [ "$CRITICAL_SEVERITY" -gt 0 ]; then
-            echo "❌ Critical vulnerabilities detected! Failing workflow."
+            echo "Critical vulnerabilities detected! Failing workflow."
             exit 1
             fi
           shell: bash
