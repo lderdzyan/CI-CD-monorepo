@@ -114,6 +114,6 @@ jobs:
                     }
                   }
                 `);
-                console.log(\`Item ${item.id}: Status updated to To Do\`);
+                console.log(`Item ${item.id}: Status updated to To Do`);
               }
             }
