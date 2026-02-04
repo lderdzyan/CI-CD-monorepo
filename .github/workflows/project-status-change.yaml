@@ -1,6 +1,12 @@
 name: Auto update project status from estimate
 
 on:
+  workflow_dispatch:
+    inputs:
+      project_number:
+        description: 'Project number to scan'
+        required: true
+        default: '1'
   schedule:
     - cron: "*/5 * * * *"
 
