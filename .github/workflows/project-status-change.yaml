@@ -1,10 +1,9 @@
-name: Project auto status from estimate
+name: Auto update project status from estimate
 
 on:
-  projects_v2_item:
-    types:
-      - edited
-      
+  schedule:
+    - cron: "*/5 * * * *"
+
 permissions:
   repository-projects: write
   contents: read
@@ -16,21 +15,36 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            // -------- CONFIG --------
-            const PROJECT_NUMBER = 1; // Project 1 number
+            const PROJECT_NUMBER = 1; 
             const STATUS_FIELD = "Status";
             const ESTIMATE_FIELD = "Estimate";
             const FROM_STATUS = "Need Estimation";
             const TO_STATUS = "To Do";
 
-            const owner = context.repo.owner;g
+            const owner = context.repo.owner;
 
-            // -------- Get project + fields --------
             const projectRes = await github.graphql(`
               query ($owner: String!) {
                 organization(login: $owner) {
                   projectV2(number: ${PROJECT_NUMBER}) {
                     id
+                    items(first: 50) {
+                      nodes {
+                        id
+                        fieldValues(first: 20) {
+                          nodes {
+                            ... on ProjectV2ItemFieldSingleSelectValue {
+                              field { name }
+                              name
+                            }
+                            ... on ProjectV2ItemFieldTextValue {
+                              field { name }
+                              text
+                            }
+                          }
+                        }
+                      }
+                    }
                     fields(first: 20) {
                       nodes {
                         ... on ProjectV2SingleSelectField {
@@ -50,65 +64,36 @@ jobs:
             `, { owner });
 
             const project = projectRes.organization.projectV2;
-
             const statusField = project.fields.nodes.find(f => f.name === STATUS_FIELD);
             const estimateField = project.fields.nodes.find(f => f.name === ESTIMATE_FIELD);
             const todoOption = statusField.options.find(o => o.name === TO_STATUS);
 
             if (!statusField || !estimateField || !todoOption) return;
 
-            // -------- Get edited project item --------
-            const itemId = context.payload.projects_v2_item.node_id;
+            for (const item of project.items.nodes) {
+              let statusValue = null;
+              let estimateValue = null;
 
-            const itemRes = await github.graphql(`
-              query ($item: ID!) {
-                node(id: $item) {
-                  ... on ProjectV2Item {
-                    id
-                    fieldValues(first: 20) {
-                      nodes {
-                        ... on ProjectV2ItemFieldSingleSelectValue {
-                          field { name }
-                          name
-                        }
-                        ... on ProjectV2ItemFieldNumberValue {
-                          field { name }
-                          number
-                        }
-                      }
-                    }
-                  }
-                }
+              for (const v of item.fieldValues.nodes) {
+                if (v.field?.name === STATUS_FIELD) statusValue = v.name;
+                if (v.field?.name === ESTIMATE_FIELD) estimateValue = v.text;
               }
-            `, { item: itemId });
 
-            let statusValue = null;
-            let estimateValue = null;
-
-            for (const v of itemRes.node.fieldValues.nodes) {
-              if (v.field?.name === STATUS_FIELD) statusValue = v.name;
-              if (v.field?.name === ESTIMATE_FIELD) estimateValue = v.number;
-            }
-
-            // -------- Rule enforcement --------
-            if (
-              statusValue === FROM_STATUS &&
-              typeof estimateValue === "number"
-            ) {
-              await github.graphql(`
-                mutation {
-                  updateProjectV2ItemFieldValue(
-                    input: {
-                      projectId: "${project.id}"
-                      itemId: "${itemId}"
-                      fieldId: "${statusField.id}"
-                      value: { singleSelectOptionId: "${todoOption.id}" }
+              if (statusValue === FROM_STATUS && estimateValue && estimateValue.trim() !== "") {
+                await github.graphql(`
+                  mutation {
+                    updateProjectV2ItemFieldValue(
+                      input: {
+                        projectId: "${project.id}"
+                        itemId: "${item.id}"
+                        fieldId: "${statusField.id}"
+                        value: { singleSelectOptionId: "${todoOption.id}" }
+                      }
+                    ) {
+                      projectV2Item { id }
                     }
-                  ) {
-                    projectV2Item { id }
                   }
-                }
-              );
-
-              console.log("Status updated to To Do");
+                `);
+                console.log(`Item ${item.id}: Status updated to To Do`);
+              }
             }
