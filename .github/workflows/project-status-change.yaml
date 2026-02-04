@@ -22,10 +22,9 @@ jobs:
         with:
           script: |
             const PROJECT_NUMBER = parseInt(
-              context.payload.inputs?.project_number || '1',
-              10
+            context.payload.inputs?.project_number || '1',
+            10
             );
-
             const STATUS_FIELD = "Status";
             const ESTIMATE_FIELD = "Estimate";
             const FROM_STATUS = "Need Estimation";
@@ -34,9 +33,9 @@ jobs:
             const owner = context.repo.owner;
 
             const projectRes = await github.graphql(`
-              query ($owner: String!) {
-                organization(login: $owner) {
-                  projectV2(number: ${PROJECT_NUMBER}) {
+              query ($owner: String!, $number: Int!) {
+                user(login: $owner) {
+                  projectV2(number: $number) {
                     id
                     items(first: 50) {
                       nodes {
@@ -44,16 +43,16 @@ jobs:
                         fieldValues(first: 20) {
                           nodes {
                             ... on ProjectV2ItemFieldSingleSelectValue {
-                              field { name }
+                              field { ... on ProjectV2FieldCommon { name } }
                               name
                             }
-                            ... on ProjectV2ItemFieldTextValue {
-                              field { name }
-                              text
-                            }
                             ... on ProjectV2ItemFieldNumberValue {
-                              field { name }
+                              field { ... on ProjectV2FieldCommon { name } }
                               number
+                            }
+                            ... on ProjectV2ItemFieldTextValue {
+                              field { ... on ProjectV2FieldCommon { name } }
+                              text
                             }
                           }
                         }
@@ -66,21 +65,25 @@ jobs:
                           name
                           options { id name }
                         }
+                        ... on ProjectV2Field {
+                          id
+                          name
+                        }
                       }
                     }
                   }
                 }
               }
-            `, { owner });
+            `, { owner, number: PROJECT_NUMBER });
 
-            const project = projectRes.organization.projectV2;
+            const project = projectRes.user.projectV2;
             if (!project) {
               console.log("Project not found");
               return;
             }
 
             const statusField = project.fields.nodes.find(f => f.name === STATUS_FIELD);
-            const todoOption = statusField?.options.find(o => o.name === TO_STATUS);
+            const todoOption = statusField?.options?.find(o => o.name === TO_STATUS);
 
             if (!statusField || !todoOption) {
               console.log("Status field or To Do option not found");
@@ -92,28 +95,34 @@ jobs:
               let estimateValue = null;
 
               for (const v of item.fieldValues.nodes) {
-                if (v.field?.name === STATUS_FIELD && v.name) statusValue = v.name;
-                if (v.field?.name === ESTIMATE_FIELD) {
-                  if (v.text) estimateValue = v.text;
-                  if (v.number !== undefined) estimateValue = v.number.toString();
+                const fieldName = v.field?.name;
+                if (fieldName === STATUS_FIELD) statusValue = v.name;
+                if (fieldName === ESTIMATE_FIELD) {
+                    // Handle both number fields and text-based estimate fields
+                    estimateValue = v.number !== undefined ? v.number : v.text;
                 }
               }
 
-              if (statusValue === FROM_STATUS && estimateValue && estimateValue.trim() !== "") {
+              if (statusValue === FROM_STATUS && estimateValue !== null && estimateValue !== "") {
                 await github.graphql(`
-                  mutation {
+                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
                     updateProjectV2ItemFieldValue(
                       input: {
-                        projectId: "${project.id}"
-                        itemId: "${item.id}"
-                        fieldId: "${statusField.id}"
-                        value: { singleSelectOptionId: "${todoOption.id}" }
+                        projectId: $projectId
+                        itemId: $itemId
+                        fieldId: $fieldId
+                        value: { singleSelectOptionId: $optionId }
                       }
                     ) {
                       projectV2Item { id }
                     }
                   }
-                `);
+                `, {
+                  projectId: project.id,
+                  itemId: item.id,
+                  fieldId: statusField.id,
+                  optionId: todoOption.id
+                });
                 console.log(`Item ${item.id}: Status updated to To Do`);
               }
             }
