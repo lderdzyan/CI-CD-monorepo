@@ -51,28 +51,29 @@ jobs:
           shell: bash
 
 
-        - name: Notify me on Slack (DM)
+        - name: Get Slack UserID
+          id: get_slack_id
           if: failure()
           uses: actions/github-script@v7
           env:
-            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             SLACK_USER_MAP: ${{ secrets.SLACK_USERS_ID}}
           with:
             script: |
-              const token = process.env.SLACK_BOT_TOKEN;
               const map = JSON.parse(process.env.SLACK_USER_MAP);
               console.log(context.actor);
               const slackUserId = map[context.actor];
               if (!slackUserId) return;
+              fs.appendFileSync(process.env.GITHUB_ENV, `SLACK_USER_ID=${slackUserId}\n`);
 
-              await fetch("https://slack.com/api/chat.postMessage", {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                  channel: slackUserId,
-                  text: `Workflow failed\nRepo: ${context.repo.owner}/${context.repo.repo}\nActor: ${context.actor}`
-                })
-              });
+        - name: Post text to a Slack channel
+          if: ${{ steps.get_slack_id.conclusion == 'success' }}
+          uses: slackapi/slack-github-action@v2.1.1
+          env: 
+            SLACK_USER_ID: ${{ env.SLACK_USER_ID }}
+          with:
+            method: chat.postMessage
+            token: ${{ secrets.SLACK_BOT_TOKEN }}
+            payload: |
+              channel: ${{ env.SLACK_USER_ID }}
+              text: "Workflow failed! Notifying user."
+
