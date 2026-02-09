@@ -52,12 +52,12 @@ jobs:
 
 
         - name: Get Slack UserID
-          if: failure()
+          if: failure()       
           id: get_slack_id
           run: |
             map='${{ secrets.SLACK_USERS_ID }}'
             actor=$GITHUB_ACTOR
-            slackUserId=$(echo $map | jq -r --arg user "$actor" '.[$user]')
+            slackUserId=$(echo "$map" | jq -r --arg user "$actor" '.[$user]')
             if [ -z "$slackUserId" ]; then
               echo "No Slack mapping for $actor"
               exit 0
@@ -65,10 +65,10 @@ jobs:
             echo "SLACK_USER_ID=$slackUserId" >> $GITHUB_ENV
           shell: bash
 
-        - name: Post text to a Slack channel
+        - name: Post text to Slack
           if: ${{ steps.get_slack_id.conclusion == 'success' }}
           uses: slackapi/slack-github-action@v2.1.1
-          env: 
+          env:
             SLACK_USER_ID: ${{ env.SLACK_USER_ID }}
           with:
             method: chat.postMessage
@@ -76,4 +76,3 @@ jobs:
             payload: |
               channel: ${{ env.SLACK_USER_ID }}
               text: "Workflow failed! Notifying user."
-
