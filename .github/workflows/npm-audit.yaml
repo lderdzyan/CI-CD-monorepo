@@ -36,7 +36,7 @@ jobs:
             HIGH_SEVERITY=$(jq '.metadata.vulnerabilities.high' audit_results.json)
             CRITICAL_SEVERITY=$(jq '.metadata.vulnerabilities.critical' audit_results.json)
 
-            echo "High vulnerabilities: $HIGH_SEVERITY"
+            echo "inch vor change $HIGH_SEVERITY"
             echo "Critical vulnerabilities: $CRITICAL_SEVERITY"
 
             if [ "$HIGH_SEVERITY" -gt 0 ] || [ "$CRITICAL_SEVERITY" -gt 0 ]; then
