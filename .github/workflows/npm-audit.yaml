@@ -52,7 +52,7 @@ jobs:
 
 
         - name: Get Slack UserID
-          if: failure()          # run only if a previous step failed
+          if: failure()          
           id: get_slack_id
           uses: actions/github-script@v7
           env:
@@ -72,7 +72,6 @@ jobs:
               return slackUserId;
 
         - name: Post text to a Slack channel
-          if: ${{ steps.get_slack_id.outputs.result != '' }}
           uses: slackapi/slack-github-action@v2.1.1
           with:
             method: chat.postMessage
