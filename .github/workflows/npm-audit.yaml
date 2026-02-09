@@ -37,7 +37,7 @@ jobs:
             CRITICAL_SEVERITY=$(jq '.metadata.vulnerabilities.critical' audit_results.json)
 
             echo "inch new change $HIGH_SEVERITY"
-            echo "Critical vulnerabilities: $CRITICAL_SEVERITY"
+            echo "echo text change vulnerabilities: $CRITICAL_SEVERITY"
 
             if [ "$HIGH_SEVERITY" -gt 0 ] || [ "$CRITICAL_SEVERITY" -gt 0 ]; then
             echo "::warning ::$WARNING_LINE"
