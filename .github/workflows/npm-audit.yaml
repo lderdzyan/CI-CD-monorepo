@@ -49,3 +49,30 @@ jobs:
             exit 1
             fi
           shell: bash
+
+
+        - name: Notify me on Slack (DM)
+          if: failure()
+          uses: actions/github-script@v7
+          env:
+            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+            SLACK_USER_MAP: ${{ secrets.SLACK_USERS_ID}}
+          with:
+            script: |
+              const token = process.env.SLACK_BOT_TOKEN;
+              const map = JSON.parse(process.env.SLACK_USER_MAP);
+              console.log(context.actor);
+              const slackUserId = map[context.actor];
+              if (!slackUserId) return;
+
+              await fetch("https://slack.com/api/chat.postMessage", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  channel: slackUserId,
+                  text: `Workflow failed\nRepo: ${context.repo.owner}/${context.repo.repo}\nActor: ${context.actor}`
+                })
+              });

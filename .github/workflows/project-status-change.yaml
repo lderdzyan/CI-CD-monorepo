@@ -29,7 +29,6 @@ jobs:
             const TO_STATUS = "To Do";
             const owner = context.repo.owner;
 
-            // 1. Fetch Project and Fields
             const projectRes = await github.graphql(`
               query ($owner: String!, $number: Int!) {
                 user(login: $owner) {
@@ -53,7 +52,6 @@ jobs:
             const todoOption = statusField?.options?.find(o => o.name === TO_STATUS);
             if (!statusField || !todoOption) return console.log("Fields or 'To Do' option not found.");
 
-            // 2. Determine Items (Scan board or specific item)
             let itemsToProcess = [];
             if (context.payload.projects_v2_item) {
               const itemId = context.payload.projects_v2_item.node_id;
@@ -98,7 +96,6 @@ jobs:
               itemsToProcess = boardRes.user.projectV2.items.nodes;
             }
 
-            // 3. Process Logic
             for (const item of itemsToProcess) {
               let currentStatus = null;
               let currentEstimate = null;
@@ -107,7 +104,6 @@ jobs:
                 const fieldName = val.field?.name;
                 if (fieldName === STATUS_FIELD) currentStatus = val.name;
                 
-                // Capture estimate regardless of type (Text, Number, or Single Select)
                 if (fieldName === ESTIMATE_FIELD) {
                     currentEstimate = val.number ?? val.text ?? val.name;
                 }
@@ -115,7 +111,6 @@ jobs:
 
               console.log(`Checking Item ${item.id}: Status='${currentStatus}', Estimate='${currentEstimate}'`);
 
-              // LOGIC: If status is FROM_STATUS AND currentEstimate is not null/empty
               if (currentStatus === FROM_STATUS && currentEstimate !== null && currentEstimate !== "") {
                 console.log("Match! Updating to To Do...");
                 await github.graphql(`
