@@ -1,0 +1,22 @@
+name: Sync Milestones to InfraOps-Utils
+
+on:
+  milestone:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  sync-milestone:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create milestone via CLI
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          gh milestone create \
+            --repo "${{ github.repository_owner }}/Opentofu-Test" \
+            --title "${{ github.event.milestone.title }}" \
+            --description "${{ github.event.milestone.description }}" \
+            --due-date "${{ github.event.milestone.due_on }}"
