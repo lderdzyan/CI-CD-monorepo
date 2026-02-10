@@ -80,4 +80,4 @@ jobs:
             token: ${{ secrets.SLACK_BOT_TOKEN }}
             payload: |
               channel: ${{ steps.get_slack_id.outputs.result }}
-              text: "Workflow failed! Notifying user."
+              text:`Workflow failed\nWorkflow: ${context.workflow}\nRepo: ${context.repo.owner}/${context.repo.repo}\nActor: ${context.actor}`
