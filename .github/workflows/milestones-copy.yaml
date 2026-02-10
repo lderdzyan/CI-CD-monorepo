@@ -33,7 +33,7 @@ jobs:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           gh milestone create \
-            --repo MyOrg/Opentofu-Test \
+            --repo "${{ github.repository_owner }}/Opentofu-Test" \
             --title "$TITLE" \
             --description "${DESC:-}" \
             ${DUE:+--due-on "$DUE"}
