@@ -1,4 +1,4 @@
-name: Sync Milestones to InfraOps-Utils
+name: Sync Milestones to Opentofu-Test
 
 on:
   milestone:
@@ -11,12 +11,29 @@ jobs:
   sync-milestone:
     runs-on: ubuntu-latest
     steps:
+      - name: Set variables
+        id: vars
+        run: |
+          echo "TITLE=${{ github.event.milestone.title }}" >> $GITHUB_ENV
+          echo "DESC=${{ github.event.milestone.description }}" >> $GITHUB_ENV
+          echo "DUE=${{ github.event.milestone.due_on }}" >> $GITHUB_ENV
+
+      - name: Check if milestone exists
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          EXISTS=$(gh milestone list --repo MyOrg/Opentofu-Test --json title -q ".[] | select(.title==\"$TITLE\") | .title")
+          if [ -n "$EXISTS" ]; then
+            echo "Milestone '$TITLE' already exists. Skipping."
+            exit 0
+          fi
+
       - name: Create milestone via CLI
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
-          gh issue milestone create \
-            --repo "${{ github.repository_owner }}/Opentofu-Test" \
-            --title "${{ github.event.milestone.title }}" \
-            --description "${{ github.event.milestone.description }}" \
-            --due-date "${{ github.event.milestone.due_on }}"
+          gh milestone create \
+            --repo MyOrg/Opentofu-Test \
+            --title "$TITLE" \
+            --description "${DESC:-}" \
+            ${DUE:+--due-on "$DUE"}
