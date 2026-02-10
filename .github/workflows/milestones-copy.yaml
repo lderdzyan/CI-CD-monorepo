@@ -1,4 +1,4 @@
-name: Sync Milestones to InfraOps-Utils
+name: Sync Milestones to Opentofu-Test
 
 on:
   milestone:
@@ -9,14 +9,41 @@ permissions:
 
 jobs:
   sync-milestone:
+    name: Sync to OpenTofu
     runs-on: ubuntu-latest
+
     steps:
-      - name: Create milestone via CLI
-        env:
-          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
-        run: |
-          gh issue milestone create \
-            --repo "${{ github.repository_owner }}/Opentofu-Test" \
-            --title "${{ github.event.milestone.title }}" \
-            --description "${{ github.event.milestone.description }}" \
-            --due-date "${{ github.event.milestone.due_on }}"
+      - name: Sync milestone via github-script
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SYNC_TOKEN }}
+          script: |
+            const milestone = context.payload.milestone;
+
+            const owner = context.repo.owner; 
+            const repo = "Opentofu-Test";    
+
+
+            const { data: existingMilestones } = await github.rest.issues.listMilestones({
+              owner,
+              repo,
+              state: "all",
+            });
+
+            const exists = existingMilestones.find(m => m.title === milestone.title);
+
+            if (exists) {
+              console.log(`Milestone "${milestone.title}" already exists in ${repo}. Skipping.`);
+              return;
+            }
+
+
+            await github.rest.issues.createMilestone({
+              owner,
+              repo,
+              title: milestone.title,
+              description: milestone.description || "",
+              due_on: milestone.due_on || null,
+            });
+
+            console.log(`Milestone "${milestone.title}" successfully synced to ${repo}.`);
