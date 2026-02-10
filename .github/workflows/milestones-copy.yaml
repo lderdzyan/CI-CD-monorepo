@@ -15,7 +15,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
-          gh milestone create \
+          gh issue milestone create \
             --repo "${{ github.repository_owner }}/Opentofu-Test" \
             --title "${{ github.event.milestone.title }}" \
             --description "${{ github.event.milestone.description }}" \
