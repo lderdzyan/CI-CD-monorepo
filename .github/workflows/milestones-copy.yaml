@@ -15,8 +15,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
-          gh milestone create \
-            --repo "${{ github.repository_owner }}/Opentofu-Test" \
+          gh issue milestone create \
+            --repo "${{ github.repository_owner }}/InfraOps-Utils" \
             --title "${{ github.event.milestone.title }}" \
             --description "${{ github.event.milestone.description }}" \
             --due-date "${{ github.event.milestone.due_on }}"
