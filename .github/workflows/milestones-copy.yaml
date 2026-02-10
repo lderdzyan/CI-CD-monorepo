@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   sync-milestone:
+    name: Sync to OpenTofu
     runs-on: ubuntu-latest
 
     steps:
