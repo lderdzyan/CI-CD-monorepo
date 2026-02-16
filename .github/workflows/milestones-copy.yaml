@@ -1,4 +1,4 @@
-name: Sync Milestones to Opentofu-Test
+name: Sync Milestones to InfraOps Utils
 
 on:
   milestone:
@@ -9,11 +9,11 @@ permissions:
 
 jobs:
   sync-milestone:
-    name: Sync to OpenTofu
+    name: Sync to InfraOps Utils
     runs-on: ubuntu-latest
 
     steps:
-      - name: Sync milestone via github-script
+      - name: Sync milestone from Experiment3 to InfraOps Utils
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SYNC_TOKEN }}
@@ -21,7 +21,7 @@ jobs:
             const milestone = context.payload.milestone;
 
             const owner = context.repo.owner; 
-            const repo = "Opentofu-Test";    
+            const repo = "InfraOps-Utils";    
 
 
             const { data: existingMilestones } = await github.rest.issues.listMilestones({
