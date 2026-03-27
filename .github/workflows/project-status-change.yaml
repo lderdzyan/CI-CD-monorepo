@@ -7,8 +7,8 @@ on:
         description: 'Project number to scan'
         required: true
         default: '1'
-  schedule:
-    - cron: "0 * * * *"
+  # schedule:
+  #   - cron: "0 * * * *"
 
 permissions:
   repository-projects: write
